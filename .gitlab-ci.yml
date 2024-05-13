@@ -1,0 +1,121 @@
+stages:
+  - pre-compile
+  - compile
+  - vuln-scan
+  - publish
+
+image:
+  name: bufbuild/buf:1.30.0
+  entrypoint: [""]
+
+lint:
+  stage: pre-compile
+  script:
+    - buf lint
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+
+#validate merge request:
+#  stage: pre-compile
+#  rules:
+#    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+#  script:
+#    - buf breaking --against "${CI_REPOSITORY_URL}#branch=${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}"
+
+Compile:
+  stage: compile
+  script:
+    - apk add go python3 py3-pip
+    - python3 -m venv venv
+    - source venv/bin/activate
+    - pip install "betterproto[compiler]==2.0.0b6"
+    - export GOPATH=/go
+    - export PATH=$GOPATH/bin:/usr/local/go/bin:$PATH
+    - go mod tidy
+    - go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2 google.golang.org/protobuf/cmd/protoc-gen-go google.golang.org/grpc/cmd/protoc-gen-go-grpc
+    - buf mod update
+    - buf generate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+  artifacts:
+    paths:
+      - gen
+      - pkg
+      - buf_demo
+      - buf_demo_better_proto
+  cache:
+    paths:
+      - ~/.cache
+
+Publish-Go:
+  stage: publish
+  variables:
+    GIT_DEPTH: 1
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+      changes:
+        - proto/**/*
+        - buf.gen.yaml
+        - buf.lock
+        - buf.yaml
+    - when: manual
+  dependencies:
+    - Compile
+  script:
+    - |
+      if [[ -z "$CI_COMMIT_BRANCH" ]] || [[ -z "$CI_COMMIT_SHA" ]]; then
+        echo "for auto-tagging, CI_COMMIT_BRANCH and CI_COMMIT_SHA must be set"
+        exit 1
+      fi
+    - mkdir -p ~/.ssh/
+    - echo "${SSH_DEPLOY_KEY}" > ~/.ssh/id_ed25519
+    - chmod 700 ~/.ssh
+    - chmod 600 ~/.ssh/*
+    - ssh-keygen -lf ~/.ssh/id_ed25519
+    - ssh-keyscan 2>/dev/null ${CI_SERVER_HOST} > ~/.ssh/known_hosts
+    - git config --global user.email "${GITLAB_USER_EMAIL}"
+    - git config --global user.name "${GITLAB_USER_NAME} - pipeline"
+    - git remote add origin_ssh git@${CI_SERVER_HOST}:${CI_PROJECT_PATH}.git
+    - git remote -v
+    - ssh -Tv git@gitlab.com
+    - git add $CI_PROJECT_DIR/pkg
+    - git commit --allow-empty -m "generated golang files"
+    - git status
+    - git push origin_ssh HEAD:$CI_COMMIT_REF_NAME -o ci.skip # prevent triggering pipeline again
+
+
+Publish-Python:
+  stage: publish
+  image: python:3
+  variables:
+    GIT_DEPTH: 1
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+      changes:
+        - proto/**/*
+        - buf.gen.yaml
+        - buf.lock
+        - buf.yaml
+    - when: manual
+  dependencies:
+    - Compile
+  script:
+    - find buf_demo -type d -exec touch {}/__init__.py \;
+    - pip install build twine wheel
+    - python setup.py sdist bdist_wheel
+    - TWINE_PASSWORD=${CI_JOB_TOKEN} TWINE_USERNAME=gitlab-ci-token python -m twine upload --repository-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi dist/*
+
