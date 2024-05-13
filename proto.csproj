@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>buf-demo</AssemblyName>
+    <PackageId>buf-demo</PackageId>
+    <OutputType>Library</OutputType>
+    <Authors>Chen</Authors>
+    <Company>Chen</Company>
+    <AssemblyTitle>buf-demo Messaging Library</AssemblyTitle>
+    <Description>buf-demo messaging package</Description>
+    <Copyright>No Copyright</Copyright>
+    <RootNamespace>buf-demo</RootNamespace>
+    <Version>0.0.1</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.26.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Nerdbank.GitVersioning"
+                      Version="3.6.133"
+                      PrivateAssets="all"
+                      Condition="!Exists('packages.config')" />
+  </ItemGroup>
+</Project>

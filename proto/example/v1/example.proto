@@ -1,0 +1,38 @@
+syntax = "proto3";
+package proto.example.v1;
+
+option go_package = "github.com/chn555/buf-demo/pkg/proto/example/v1";
+import "google/api/annotations.proto";
+
+service ExampleService {
+  rpc AddExample(AddExampleRequest) returns (AddExampleResponse){
+    option (google.api.http) = {
+      post: "/v1/example",
+      body: "*"
+    };
+  };
+
+  rpc ListExamples(ListExamplesRequest) returns (ListExamplesResponse){
+    option (google.api.http) = {
+      get: "/v1/example"
+    };
+  };
+}
+
+message Example{}
+
+message AddExampleRequest{
+  Example example = 1;
+}
+
+message AddExampleResponse{}
+
+message ListExamplesRequest{
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListExamplesResponse{
+  string next_page_token = 1;
+  repeated Example examples = 2;
+}
